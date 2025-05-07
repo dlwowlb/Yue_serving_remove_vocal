@@ -1,49 +1,88 @@
 import os
-import time
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
+import googleapiclient.discovery
 
-YOUTUBE_API_KEY = os.environ['YOUTUBE_API_KEY']
-POLL_INTERVAL = int(os.environ.get('POLL_INTERVAL_SEC', 5))
+YOUTUBE_API_KEY = os.environ.get('YOUTUBE_API_KEY')  # API 키를 환경변수 등에서 불러오기
+CHANNEL_ID = "UC............"  # 대상 채널의 ID (예: UC로 시작하는 고유 ID)
 
-def get_live_chat_id(broadcast_id):
-    youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
-    resp = youtube.liveBroadcasts().list(
-        part='snippet',
-        id=broadcast_id
+youtube = googleapiclient.discovery.build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
+
+# 채널에서 라이브 상태인 영상 검색
+search_response = youtube.search().list(
+    part="snippet",
+    channelId=CHANNEL_ID,
+    type="video",
+    eventType="live"    # 라이브 중인 영상만 필터
+).execute()
+
+live_video_id = None
+for item in search_response.get("items", []):
+    # 검색 결과 중 'liveBroadcastContent'가 'live'인 항목을 확인
+    if item["snippet"].get("liveBroadcastContent") == "live":
+        live_video_id = item["id"]["videoId"]
+        break
+
+if not live_video_id:
+    print("현재 라이브 중인 영상이 없습니다.")
+
+if live_video_id:
+    video_response = youtube.videos().list(
+        part="liveStreamingDetails",
+        id=live_video_id
     ).execute()
-    return resp['items'][0]['snippet']['liveChatId']
+    items = video_response.get("items", [])
+    if items:
+        live_chat_id = items[0]["liveStreamingDetails"].get("activeLiveChatId")
+        print(f"Live Chat ID: {live_chat_id}")
+    else:
+        live_chat_id = None
+        print("영상 상세 정보를 가져오지 못했습니다.")
 
-def poll_chat(live_chat_id):
-    youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
+
+import time
+from google.cloud import firestore
+
+# Firestore 초기화 (Cloud Function 환경에서는 기본 인증으로 프로젝트에 연결됨)
+db = firestore.Client()
+collection = db.collection("LiveChatMessages")  # 저장할 컬렉션 이름
+
+if live_chat_id:
     next_page_token = None
-
+    polling_interval = 5000  # 기본 5초 (밀리초)
     while True:
-        try:
-            resp = youtube.liveChatMessages().list(
-                liveChatId=live_chat_id,
-                part='snippet,authorDetails',
-                pageToken=next_page_token,
-            ).execute()
+        chat_response = youtube.liveChatMessages().list(
+            liveChatId=live_chat_id,
+            part="snippet,authorDetails",
+            pageToken=next_page_token
+        ).execute()
 
-            for msg in resp.get('items', []):
-                author = msg['authorDetails']['displayName']
-                text   = msg['snippet']['displayMessage']
-                timestamp = msg['snippet']['publishedAt']
-                # TODO: Pub/Sub, BigQuery, Logging 등 원하는 처리
-                print(f"[{timestamp}] {author}: {text}")
+        # 응답에서 메시지 리스트 가져오기
+        messages = chat_response.get("items", [])
+        for msg in messages:
+            # 메시지 정보 추출
+            author = msg["authorDetails"].get("displayName")
+            text = msg["snippet"].get("displayMessage")
+            published = msg["snippet"].get("publishedAt")
+            message_id = msg.get("id")
+            data = {
+                "video_id": live_video_id,
+                "author": author,
+                "message": text,
+                "publishedAt": published
+            }
+            # Firestore에 메시지 저장 (document ID를 메시지 ID로 설정)
+            if message_id:
+                collection.document(message_id).set(data)
+            else:
+                collection.add(data)
+            print(f"[{published}] {author}: {text}")
 
-            next_page_token = resp.get('nextPageToken')
-            interval = resp.get('pollingIntervalMillis', POLL_INTERVAL * 1000) / 1000.0
-            time.sleep(interval)
+        # 다음 페이지 토큰 및 폴링 간격 갱신
+        next_page_token = chat_response.get("nextPageToken")
+        polling_interval = chat_response.get("pollingIntervalMillis", 5000)
+        if not next_page_token:
+            # 더 가져올 토큰이 없으면 (스트림 종료 등) 루프 종료
+            print("라이브 채팅이 종료되었거나 더 이상 메시지가 없습니다.")
+            break
 
-        except HttpError as e:
-            print("Error polling chat:", e)
-            time.sleep(POLL_INTERVAL)
-
-if __name__ == '__main__':
-    # 환경변수 또는 파라미터로 받아올 수 있음
-    BROADCAST_ID = os.environ['BROADCAST_ID']  
-    chat_id = get_live_chat_id(BROADCAST_ID)
-    print("LiveChatId:", chat_id)
-    poll_chat(chat_id)
+        # pollingIntervalMillis 동안 대기 (밀리초를 초로 변환)
+        time.sleep(polling_interval / 1000.0)
