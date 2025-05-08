@@ -1,2 +1,2 @@
-google-api-python-client==2.x
-google-cloud-firestore==2.x
+google-api-python-client>=2.0.0
+google-cloud-firestore>=2.0.0
