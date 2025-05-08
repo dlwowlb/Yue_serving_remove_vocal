@@ -50,6 +50,8 @@ def poll_live_chat(live_chat_id: str):
                 pageToken=next_page_token
             ).execute()
             for msg in resp.get("items", []):
+                
+                '''
                 rec = {
                     "id":        msg.get("id"),
                     "author":    msg["authorDetails"].get("displayName"),
@@ -59,6 +61,16 @@ def poll_live_chat(live_chat_id: str):
                 line = json.dumps(rec, ensure_ascii=False)
                 print(line)
                 log_file.write(line + "\n")
+                '''
+
+                # 메시지 텍스트만 추출
+                text = msg["snippet"].get("displayMessage")
+                # 콘솔에 메시지만 출력
+                print(text, flush=True)
+                # 로그 파일에도 메시지만 기록
+                log_file.write(text + "\n")
+
+
             next_page_token = resp.get("nextPageToken")
             interval = resp.get("pollingIntervalMillis", 5000) / 1000.0
             time.sleep(interval)
