@@ -9,12 +9,13 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 4. 소스 복사
-COPY main.py .
+COPY gpt_main.py .
 
 # 5. 환경변수 안내 (실행 시 docker run -e 로 설정)
 #    예: -e YOUTUBE_API_KEY=YOUR_KEY -e CHANNEL_ID=UCxxxxxx
 ENV YOUTUBE_API_KEY=""
 ENV CHANNEL_ID=""
+ENV OPENAI_API_KEY=""
 
 # 6. 실행
-CMD ["python", "main.py"]
+CMD ["python", "gpt_main.py"]
