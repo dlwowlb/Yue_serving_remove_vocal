@@ -51,8 +51,9 @@ def get_live_chat_id(video_id: str):
 def classify_message(text: str) -> str:
     """GPT API를 호출하여 chat 코멘트를 genre, instrument, mood, gender 형태로 분류합니다."""
     system_prompt = (
-        "당신은 음악 채팅 메시지를 '장르, 악기, 분위기, 성별' 키워드로 요약하는 분류기입니다. "
-        "각 속성은 단어 하나로 표현하고 쉼표로 구분하여 한 문장으로 출력해주세요."
+        "당신은 음악 채팅 메시지를 '음악장르, 악기, 분위기, 성별' 키워드로 요약하는 분류기입니다. "
+        "각 속성을 포함하여 영어로 출력해주세요.(e.g. inspiring female uplifting pop electronic bright vocal)"
+    
     )
     user_prompt = f"분류할 메시지: '{text}'"
 
